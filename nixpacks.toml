@@ -1,0 +1,21 @@
+[variables]
+PYTHONUNBUFFERED = '1'
+PYTHONDONTWRITEBYTECODE = '1'
+
+[phases.setup]
+nixPkgs = [
+    "python311",
+    "python311Packages.pip"
+]
+
+[phases.install]
+cmds = [
+    'python -m pip install --upgrade pip',
+    'pip install -r requirements.txt'
+]
+
+[phases.build]
+cmds = ['echo "Build completed successfully"']
+
+[start]
+cmd = 'python stock_bot.py'

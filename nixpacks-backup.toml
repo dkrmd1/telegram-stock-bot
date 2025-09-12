@@ -1,0 +1,75 @@
+[variables]
+PYTHONUNBUFFERED = '1'
+PYTHONDONTWRITEBYTECODE = '1'
+NIXPACKS_PYTHON_VERSION = '3.11'
+
+[phases.setup]
+nixPkgs = [
+    "python311",
+    "python311Packages.pip",
+    "python311Packages.setuptools", 
+    "python311Packages.wheel",
+    "gcc",
+    "pkg-config",
+    "freetype",
+    "libpng",
+    "zlib",
+    "cairo",
+    "pango"
+]
+
+[phases.install]
+cmds = [
+    'echo "📦 Installing Python dependencies..."',
+    'python -m pip install --upgrade pip setuptools wheel',
+    'pip install --no-cache-dir -r requirements.txt',
+    'echo "✅ Dependencies installed successfully"'
+]
+
+[phases.build]
+cmds = [
+    'echo "🏗️  Building application..."',
+    'python -c "import config; print(\"✅ Configuration validated\")"',
+    'python -c "import yfinance, pandas, numpy, matplotlib; print(\"✅ Core libraries imported successfully\")"',
+    'echo "✅ Build completed successfully"'
+]
+
+[start]
+cmd = 'python stock_bot.py'[variables]
+PYTHONUNBUFFERED = '1'
+PYTHONDONTWRITEBYTECODE = '1'
+NIXPACKS_PYTHON_VERSION = '3.11'
+
+[phases.setup]
+nixPkgs = [
+    "python311",
+    "python311Packages.pip",
+    "python311Packages.setuptools", 
+    "python311Packages.wheel",
+    "gcc",
+    "pkg-config",
+    "freetype",
+    "libpng",
+    "zlib",
+    "cairo",
+    "pango"
+]
+
+[phases.install]
+cmds = [
+    'echo "📦 Installing Python dependencies..."',
+    'python -m pip install --upgrade pip setuptools wheel',
+    'pip install --no-cache-dir -r requirements.txt',
+    'echo "✅ Dependencies installed successfully"'
+]
+
+[phases.build]
+cmds = [
+    'echo "🏗️  Building application..."',
+    'python -c "import config; print(\"✅ Configuration validated\")"',
+    'python -c "import yfinance, pandas, numpy, matplotlib; print(\"✅ Core libraries imported successfully\")"',
+    'echo "✅ Build completed successfully"'
+]
+
+[start]
+cmd = 'python stock_bot.py'
