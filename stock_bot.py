@@ -295,6 +295,7 @@ def main():
     
     # Register handlers
     app.add_handler(CommandHandler("start", bot.start))
+    app.add_handler(CommandHandler("ask", bot.ask_command))
     app.add_handler(CallbackQueryHandler(bot.button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot.handle_text))
     
