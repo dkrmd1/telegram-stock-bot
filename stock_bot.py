@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Bot Telegram Saham Indonesia - Railway Ready
-COMPLETE VERSION WITH AI ASSISTANT
+SAFE VERSION - NO NAME ERRORS
 """
 
 import os
@@ -15,21 +15,44 @@ from typing import Dict, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
-from openai import OpenAI
+# Try to import Gemini, fallback gracefully
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
+    print("Warning: google-generativeai not installed, AI features disabled")
 
 from dotenv import load_dotenv
 load_dotenv()
 
-# ===================== SIMPLE CONFIG =====================
+# ===================== SAFE CONFIG =====================
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
-OPENAI_MAX_TOKENS = int(os.getenv("OPENAI_MAX_TOKENS", 500))
 BOT_NAME = os.getenv("BOT_NAME", "AkademikSaham_AIbot")
 PORT = int(os.getenv("PORT", 8080))
 WEBHOOK_ENABLED = os.getenv("WEBHOOK_ENABLED", "false").lower() == "true"
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
+# Safe AI key loading - support both old and new
+AI_API_KEY = None
+for key_name in ["GEMINI_API_KEY", "OPENAI_API_KEY"]:
+    ai_key = os.getenv(key_name)
+    if ai_key:
+        AI_API_KEY = ai_key
+        print(f"Found AI key: {key_name}")
+        break
+
+# Initialize Gemini AI safely
+gemini_model = None
+if AI_API_KEY and GEMINI_AVAILABLE:
+    try:
+        genai.configure(api_key=AI_API_KEY)
+        gemini_model = genai.GenerativeModel('gemini-pro')
+        print("Gemini AI initialized successfully")
+    except Exception as e:
+        print(f"Gemini initialization error: {e}")
+        gemini_model = None
 
 POPULAR_STOCKS = {
     'BBCA.JK': 'Bank Central Asia',
@@ -53,7 +76,7 @@ logging.getLogger("yfinance").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 
-# ===================== COMPLETE BOT CLASS =====================
+# ===================== SAFE BOT CLASS =====================
 
 class StockBot:
     def __init__(self):
@@ -102,41 +125,60 @@ class StockBot:
     # ==================== AI FUNCTIONS ====================
     
     async def ai_chat(self, user_question: str) -> str:
-        """AI chat using OpenAI for stock/investment questions"""
-        if not OPENAI_API_KEY:
-            return "❌ AI Assistant tidak tersedia (OpenAI API key tidak dikonfigurasi)"
+        """AI chat using available AI service"""
+        if not AI_API_KEY:
+            return "❌ AI Assistant tidak tersedia (API key tidak dikonfigurasi)"
+        
+        if not gemini_model:
+            return """❌ AI Assistant tidak tersedia saat ini
+
+🔧 **Untuk mengaktifkan AI:**
+1. Install: `pip install google-generativeai`
+2. Set GEMINI_API_KEY di Railway Variables
+3. Restart bot
+
+📊 Sementara gunakan fitur saham: `/stock BBCA`"""
         
         try:
-            openai_client = OpenAI(api_key=OPENAI_API_KEY)
-            
-            # System prompt for stock/investment focused AI
-            system_prompt = """Anda adalah AI assistant ahli saham dan investasi Indonesia. Berikan jawaban yang:
+            # Create enhanced prompt for stock/investment focused AI
+            enhanced_prompt = f"""Anda adalah AI assistant ahli saham dan investasi Indonesia. Berikan jawaban yang:
 
 1. Fokus pada saham Indonesia dan Bursa Efek Indonesia (BEI)
-2. Berikan informasi edukasi investasi yang baik
-3. Selalu ingatkan bahwa ini bukan nasihat investasi pribadi
-4. Gunakan bahasa Indonesia yang mudah dipahami
-5. Berikan contoh konkret jika relevan
-6. Maksimal 500 kata per jawaban
+2. Berikan informasi edukasi investasi yang baik dan akurat
+3. Gunakan bahasa Indonesia yang mudah dipahami
+4. Berikan contoh konkret jika relevan
+5. Maksimal 400 kata per jawaban
+6. Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan nasihat investasi
 
-PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan nasihat investasi."""
+Pertanyaan: {user_question}
 
-            response = openai_client.chat.completions.create(
-                model=OPENAI_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_question}
-                ],
-                max_tokens=OPENAI_MAX_TOKENS,
-                temperature=0.7
-            )
+Berikan jawaban yang informatif dan edukatif."""
+
+            response = gemini_model.generate_content(enhanced_prompt)
             
-            ai_response = response.choices[0].message.content
-            return f"🤖 **AI Assistant**\n\n{ai_response}\n\n💡 *Ini hanya informasi edukasi, bukan nasihat investasi*"
+            if response.text:
+                ai_response = response.text.strip()
+                return f"🤖 **AI Assistant (Gemini)**\n\n{ai_response}\n\n💡 *Ini hanya informasi edukasi, bukan nasihat investasi*"
+            else:
+                return "❌ AI tidak dapat memberikan jawaban untuk pertanyaan ini"
             
         except Exception as e:
-            logger.error(f"OpenAI API error: {e}")
-            return f"❌ Maaf, AI Assistant sedang bermasalah. Coba lagi nanti."
+            logger.error(f"AI API error: {e}")
+            
+            # Handle specific error types
+            if "quota" in str(e).lower() or "429" in str(e):
+                return """❌ AI Assistant sementara tidak tersedia (quota habis)
+
+🔧 **Solusi:**
+1. Cek usage di ai.google.dev
+2. Tunggu reset quota harian
+3. Atau gunakan fitur saham: `/stock BBCA`"""
+            elif "safety" in str(e).lower():
+                return """❌ Pertanyaan tidak dapat dijawab karena policy keamanan
+
+💡 Coba pertanyaan yang lebih umum tentang investasi atau saham"""
+            else:
+                return f"❌ AI Assistant bermasalah sementara. Coba lagi nanti."
 
     # ==================== HANDLERS ====================
 
@@ -151,6 +193,8 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        ai_status = "✅ Aktif" if gemini_model else "❌ Tidak aktif"
+        
         welcome = f"""🎉 Selamat datang di {BOT_NAME}, {user}!
 
 📱 **Menu tersedia:**
@@ -158,6 +202,8 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
 • `/stock KODE` - Cari saham tertentu
 • Atau pilih tombol di bawah
 • Atau ketik langsung kode saham
+
+🤖 **AI Status**: {ai_status}
 
 💡 **Contoh**: 
 • `/ask Apa itu saham?`
@@ -169,7 +215,8 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
     async def ask_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /ask command for AI chat"""
         if not context.args:
-            message = """🤖 **AI Assistant - Tanya Apapun tentang Saham & Investasi**
+            ai_status = "tersedia" if gemini_model else "tidak tersedia"
+            message = f"""🤖 **AI Assistant - {ai_status.title()}**
 
 **Format:** `/ask [pertanyaan Anda]`
 
@@ -274,13 +321,17 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        ai_status = "✅ Aktif" if gemini_model else "❌ Tidak aktif"
+        
         text = f"""🏠 {BOT_NAME} - Menu Utama
 
 📱 **Cara menggunakan:**
 • `/ask [pertanyaan]` - Tanya AI tentang investasi
 • `/stock KODE` - Cari saham tertentu  
 • Atau ketik langsung kode saham
-• Atau pilih menu di bawah"""
+• Atau pilih menu di bawah
+
+🤖 **AI Status**: {ai_status}"""
         
         await query.edit_message_text(text, reply_markup=reply_markup)
 
@@ -305,7 +356,8 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
         
         if count == 0:
             message += "📊 Data saham sedang tidak tersedia\n(Yahoo Finance maintenance)\n\n"
-            message += "💡 Coba tanya AI tentang saham:\n`/ask Analisis saham BBCA`"
+            if gemini_model:
+                message += "💡 Coba tanya AI tentang saham:\n`/ask Analisis saham BBCA`"
         
         keyboard = [[InlineKeyboardButton("🏠 Menu Utama", callback_data='back')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -335,17 +387,17 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
 🕐 **Update**: {datetime.now().strftime('%H:%M:%S WIB')}"""
             else:
                 message = """❌ Data IHSG tidak tersedia saat ini
-(Yahoo Finance sedang maintenance)
-
-💡 Tanya AI tentang IHSG:
-`/ask Apa itu IHSG dan bagaimana cara membacanya?`"""
+(Yahoo Finance sedang maintenance)"""
+                
+                if gemini_model:
+                    message += "\n\n💡 Tanya AI tentang IHSG:\n`/ask Apa itu IHSG dan bagaimana cara membacanya?`"
                 
         except Exception as e:
             logger.error(f"IHSG error: {e}")
-            message = """❌ Error mengambil data IHSG
-
-💡 Tanya AI tentang pasar saham:
-`/ask Bagaimana kondisi pasar saham Indonesia?`"""
+            message = "❌ Error mengambil data IHSG"
+            
+            if gemini_model:
+                message += "\n\n💡 Tanya AI tentang pasar saham:\n`/ask Bagaimana kondisi pasar saham Indonesia?`"
         
         keyboard = [[InlineKeyboardButton("🏠 Menu Utama", callback_data='back')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -354,10 +406,19 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
 
     async def show_ai_help(self, query):
         """Show AI Assistant help"""
-        if not OPENAI_API_KEY:
-            message = "🤖 **AI Assistant**\n\n❌ AI Assistant tidak tersedia (OpenAI API key tidak dikonfigurasi di Railway Variables)"
+        if not AI_API_KEY:
+            message = "🤖 **AI Assistant**\n\n❌ AI Assistant tidak tersedia (API key tidak dikonfigurasi di Railway Variables)"
+        elif not gemini_model:
+            message = """🤖 **AI Assistant**
+
+❌ AI tidak tersedia saat ini
+
+🔧 **Untuk mengaktifkan:**
+1. Install google-generativeai
+2. Set GEMINI_API_KEY di Railway
+3. Restart bot"""
         else:
-            message = """🤖 **AI Assistant - Konsultasi Investasi & Saham**
+            message = """🤖 **AI Assistant - Powered by Google Gemini**
 
 **Cara menggunakan:**
 • `/ask [pertanyaan]` - Tanya langsung ke AI
@@ -377,6 +438,7 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
 ✅ Analisis konsep saham
 ✅ Diskusi risiko investasi
 
+🆓 **Gratis**: 1500 pertanyaan per hari
 ⚠️ **Disclaimer**: AI memberikan informasi edukasi, bukan nasihat investasi pribadi"""
         
         keyboard = [[InlineKeyboardButton("🏠 Menu Utama", callback_data='back')]]
@@ -386,6 +448,8 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
 
     async def show_help(self, query):
         """Show help"""
+        ai_status = "✅ Tersedia" if gemini_model else "❌ Tidak tersedia"
+        
         message = f"""❓ **BANTUAN {BOT_NAME}**
 
 **Cara Menggunakan:**
@@ -401,21 +465,15 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
 • `/stock GOTO` → Info GoTo
 • Ketik: `BBRI` → Info Bank BRI
 
-**Contoh tanya AI:**
-• `/ask Bagaimana cara investasi yang baik?`
-• `/ask Analisis saham BBCA`
-• `/ask Risiko investasi saham?`
-
 **Fitur:**
 ✅ Data real-time saham Indonesia
 ✅ Informasi IHSG
 ✅ Saham-saham populer
-✅ AI Assistant untuk konsultasi investasi
+{ai_status} AI Assistant untuk konsultasi investasi
 ✅ Interface yang mudah digunakan
 
 🔄 Bot akan coba mengambil data real-time
-📊 Jika Yahoo Finance maintenance, akan tampil data demo
-🤖 AI Assistant selalu siap membantu konsultasi investasi"""
+📊 Jika Yahoo Finance maintenance, fitur pencarian tetap tersedia"""
         
         keyboard = [[InlineKeyboardButton("🏠 Menu Utama", callback_data='back')]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -442,10 +500,12 @@ PENTING: Selalu tambahkan disclaimer bahwa ini hanya informasi edukasi, bukan na
             await self.search_stock(update, text.upper())
         else:
             # For other text, suggest using /ask command
+            suggestion = f"`/ask {text}`" if gemini_model else "`/stock KODE_SAHAM`"
+            
             message = f"""💬 **Pesan Anda:** "{text}"
 
 🤔 Sepertinya Anda ingin bertanya. Gunakan format:
-`/ask {text}`
+{suggestion}
 
 Atau ketik kode saham (contoh: BBCA, GOTO)"""
             
@@ -454,12 +514,14 @@ Atau ketik kode saham (contoh: BBCA, GOTO)"""
 # ===================== MAIN FUNCTION =====================
 
 def main():
-    """Main function - Railway Variables Required"""
+    """Main function - Safe version"""
     
     print("Checking Railway environment variables...")
     print(f"TELEGRAM_BOT_TOKEN: {'SET' if TELEGRAM_BOT_TOKEN else 'NOT SET'}")
-    print(f"AI_API_KEY: {'SET' if GEMINI_API_KEY else 'NOT SET'}")
+    print(f"AI_API_KEY: {'SET' if AI_API_KEY else 'NOT SET'}")
     print(f"BOT_NAME: {BOT_NAME}")
+    print(f"GEMINI_AVAILABLE: {GEMINI_AVAILABLE}")
+    print(f"GEMINI_MODEL: {'Initialized' if gemini_model else 'Not available'}")
     
     if not TELEGRAM_BOT_TOKEN:
         print("\n❌ TELEGRAM_BOT_TOKEN tidak ditemukan!")
